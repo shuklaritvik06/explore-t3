@@ -7,36 +7,73 @@ import {
 } from "@/server/api/trpc";
 
 export const postRouter = createTRPCRouter({
-  hello: publicProcedure
-    .input(z.object({ text: z.string() }))
-    .query(({ input }) => {
-      return {
-        greeting: `Hello ${input.text}`,
-      };
-    }),
-
-  create: protectedProcedure
-    .input(z.object({ name: z.string().min(1) }))
+  createPost: protectedProcedure
+    .input(
+      z.object({
+        title: z.string().min(20),
+        postBody: z.string().min(20),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
-      // simulate a slow db call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
       return ctx.db.post.create({
         data: {
-          name: input.name,
+          title: input.title,
+          postBody: input.postBody,
           createdBy: { connect: { id: ctx.session.user.id } },
         },
       });
     }),
+  listPost: publicProcedure
+    .input(
+      z.object({
+        start: z.number(),
+        pageSize: z.number(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const posts = await ctx.db.post.findMany({
+        skip: input.start,
+        take: input.pageSize,
+        include: {
+          Votes: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
 
-  getLatest: protectedProcedure.query(({ ctx }) => {
-    return ctx.db.post.findFirst({
-      orderBy: { createdAt: "desc" },
-      where: { createdBy: { id: ctx.session.user.id } },
-    });
-  }),
-
-  getSecretMessage: protectedProcedure.query(() => {
-    return "you can now see this secret message!";
-  }),
+      const totalPosts = await ctx.db.post.count();
+      const totalPages = Math.ceil(totalPosts / input.pageSize);
+      const result = {
+        posts,
+        totalPages,
+      };
+      return result;
+    }),
+  deletePost: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(({ ctx, input }) => {
+      return ctx.db.post.delete({
+        where: {
+          id: input.id,
+          createdById: ctx.session.user.id,
+        },
+      });
+    }),
+  editPost: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        title: z.string().min(20),
+        postBody: z.string().min(20),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      return ctx.db.post.update({
+        where: {
+          id: 1,
+        },
+        data: { title: input.title, postBody: input.postBody },
+      });
+    }),
 });
